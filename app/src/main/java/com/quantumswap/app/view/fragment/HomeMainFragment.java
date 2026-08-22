@@ -40,6 +40,7 @@ public class HomeMainFragment extends Fragment  {
     private RecyclerView tokenRecyclerView;
     private HorizontalScrollView tokenScrollContainer;
     private LinearLayout tokenScrollRow;
+    private View tokenCardView;
     private VerticalScrollIndicatorView tokenScrollLeft;
     private VerticalScrollIndicatorView tokenScrollRight;
     private TextView tokenEmptyTextView;
@@ -122,6 +123,7 @@ public class HomeMainFragment extends Fragment  {
             tokenSegmentRadioGroup = view.findViewById(R.id.radioGroup_tokenList_segment);
             tokenSegmentRecognizedRadio = view.findViewById(R.id.radio_tokenList_recognized);
             tokenSegmentUnrecognizedRadio = view.findViewById(R.id.radio_tokenList_unrecognized);
+            tokenCardView = view.findViewById(R.id.tokenList_card);
 
             JsonViewModel jsonViewModel = new JsonViewModel(getContext(), languageKey);
             tokenTitleTextView.setText(jsonViewModel.getTokensByLangValues());
@@ -201,6 +203,12 @@ public class HomeMainFragment extends Fragment  {
      * Send/Receive panel.
      */
     private void renderEmptyState(boolean empty) {
+        // Hide the whole bordered card when the wallet holds no tokens
+        // at all - otherwise its border renders as an empty sliver
+        // below the wallet panel.
+        if (tokenCardView != null) {
+            tokenCardView.setVisibility(empty ? View.GONE : View.VISIBLE);
+        }
         if (tokenScrollRow != null) {
             tokenScrollRow.setVisibility(empty ? View.GONE : View.VISIBLE);
         } else if (tokenScrollContainer != null) {
@@ -264,7 +272,7 @@ public class HomeMainFragment extends Fragment  {
      * Mirrors the bold-purple / regular-gray text swap that
      * {@link AccountTransactionsFragment} performs on its
      * Completed / Pending toggle buttons whenever the active tab
-     * changes. The {@code @drawable/toggle_selector} background on
+     * changes. The {@code @drawable/segment_underline} background on
      * each {@link RadioButton} already redraws the 2dp underline
      * automatically (it keys off {@code state_checked}, which
      * {@link RadioGroup} flips for us), so the only work this
@@ -294,23 +302,22 @@ public class HomeMainFragment extends Fragment  {
         if (ctx == null) {
             return;
         }
-        int selectedColor = androidx.core.content.ContextCompat.getColor(ctx, R.color.colorCommon2);
-        int unselectedColor = androidx.core.content.ContextCompat.getColor(ctx, R.color.colorCommon3);
+        // Desktop token tabs: no background change and no color swap -
+        // the active tab is just bold (plus the green underline drawn
+        // by @drawable/segment_underline via state_checked).
+        int selectedColor = androidx.core.content.ContextCompat.getColor(ctx, R.color.colorCommon6);
+        int unselectedColor = androidx.core.content.ContextCompat.getColor(ctx, R.color.colorCommon6);
 
         if (unrecognizedSelected) {
             tokenSegmentUnrecognizedRadio.setTextColor(selectedColor);
-            tokenSegmentUnrecognizedRadio.setTypeface(
-                    tokenSegmentUnrecognizedRadio.getTypeface(), android.graphics.Typeface.BOLD);
+            tokenSegmentUnrecognizedRadio.setTypeface(android.graphics.Typeface.create(tokenSegmentUnrecognizedRadio.getTypeface(), android.graphics.Typeface.BOLD));
             tokenSegmentRecognizedRadio.setTextColor(unselectedColor);
-            tokenSegmentRecognizedRadio.setTypeface(
-                    tokenSegmentRecognizedRadio.getTypeface(), android.graphics.Typeface.NORMAL);
+            tokenSegmentRecognizedRadio.setTypeface(android.graphics.Typeface.create(tokenSegmentRecognizedRadio.getTypeface(), android.graphics.Typeface.NORMAL));
         } else {
             tokenSegmentRecognizedRadio.setTextColor(selectedColor);
-            tokenSegmentRecognizedRadio.setTypeface(
-                    tokenSegmentRecognizedRadio.getTypeface(), android.graphics.Typeface.BOLD);
+            tokenSegmentRecognizedRadio.setTypeface(android.graphics.Typeface.create(tokenSegmentRecognizedRadio.getTypeface(), android.graphics.Typeface.BOLD));
             tokenSegmentUnrecognizedRadio.setTextColor(unselectedColor);
-            tokenSegmentUnrecognizedRadio.setTypeface(
-                    tokenSegmentUnrecognizedRadio.getTypeface(), android.graphics.Typeface.NORMAL);
+            tokenSegmentUnrecognizedRadio.setTypeface(android.graphics.Typeface.create(tokenSegmentUnrecognizedRadio.getTypeface(), android.graphics.Typeface.NORMAL));
         }
     }
 

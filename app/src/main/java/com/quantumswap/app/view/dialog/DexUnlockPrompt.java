@@ -12,14 +12,10 @@ import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 
 import com.quantumswap.app.R;
-import com.quantumswap.app.keystorage.SecureStorage;
 import com.quantumswap.app.security.UnlockAttemptLimiter;
 import com.quantumswap.app.utils.GlobalMethods;
-import com.quantumswap.app.utils.PrefConnect;
 import com.quantumswap.app.viewmodel.JsonViewModel;
-import com.quantumswap.app.viewmodel.KeyViewModel;
 
-import org.json.JSONObject;
 
 /**
  * Shared password gate for the DEX flows (Swap / Liquidity / Pools /
@@ -53,6 +49,16 @@ public final class DexUnlockPrompt {
     public static void show(final Activity activity,
                             final JsonViewModel jsonViewModel,
                             final OnUnlocked onUnlocked) {
+        show(activity, jsonViewModel, onUnlocked, null);
+    }
+
+    /** Variant with a close/dismiss callback so step-driven flows
+     *  (TxStepsDialog) can re-enable their footer button when the
+     *  user backs out of the password gate. */
+    public static void show(final Activity activity,
+                            final JsonViewModel jsonViewModel,
+                            final OnUnlocked onUnlocked,
+                            final Runnable onClosed) {
         final AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("")
                 .setView(R.layout.unlock_dialog_fragment)
@@ -89,7 +95,10 @@ public final class DexUnlockPrompt {
         closeButton.setText(jsonViewModel.getCloseByLangValues());
         UnlockDialogs.applyMandatory(dialog, false);
 
-        closeButton.setOnClickListener(v -> dialog.dismiss());
+        closeButton.setOnClickListener(v -> {
+            dialog.dismiss();
+            if (onClosed != null) onClosed.run();
+        });
 
         unlockButton.setOnClickListener(v -> {
             final String password = passwordEditText.getText() == null
@@ -105,76 +114,21 @@ public final class DexUnlockPrompt {
             passwordEditText.setEnabled(false);
             final WaitDialog.MessageHandle waitHandle =
                     WaitDialog.showMessage(activity, jsonViewModel.getWaitUnlockByLangValues());
-            new Thread(() -> {
-                boolean ok = false;
-                String lockoutMessage = null;
-                try {
-                    UnlockAttemptLimiter.Decision lim =
-                            UnlockAttemptLimiter.currentDecision(activity);
-                    if (lim.kind == UnlockAttemptLimiter.DecisionKind.LOCKED) {
-                        lockoutMessage = UnlockAttemptLimiter
-                                .userFacingLockoutMessage(lim.remainingSeconds, jsonViewModel);
-                    } else {
-                        SecureStorage secureStorage = KeyViewModel.getSecureStorage();
-                        if (secureStorage.isUnlocked()) {
-                            com.quantumswap.app.keystorage.UnlockCoordinator uc =
-                                    secureStorage.getCoordinator();
-                            ok = uc != null && uc.verifyPassword(activity, password.trim());
-                        } else {
-                            ok = secureStorage.unlock(activity, password.trim());
+            com.quantumswap.app.security.WalletUnlock.verify(activity, jsonViewModel, password,
+                    (unlocked, errorMessage) -> {
+                        try { waitHandle.dismiss(); } catch (Throwable ignore) { }
+                        if (!unlocked) {
+                            unlockButton.setEnabled(true);
+                            closeButton.setEnabled(true);
+                            passwordEditText.setEnabled(true);
+                            passwordEditText.requestFocus();
+                            GlobalMethods.ShowErrorDialog(activity,
+                                    jsonViewModel.getErrorTitleByLangValues(), errorMessage);
+                            return;
                         }
-                        if (ok) {
-                            UnlockAttemptLimiter.recordSuccess(activity,
-                                    UnlockAttemptLimiter.Channel.STRONGBOX_UNLOCK);
-                        } else {
-                            UnlockAttemptLimiter.recordFailure(activity,
-                                    UnlockAttemptLimiter.Channel.STRONGBOX_UNLOCK);
-                        }
-                    }
-                } catch (Exception e) {
-                    timber.log.Timber.e(e, "DEX flow unlock failed");
-                }
-                final boolean unlocked = ok;
-                final String lockoutMessageFinal = lockoutMessage;
-                activity.runOnUiThread(() -> {
-                    try { waitHandle.dismiss(); } catch (Throwable ignore) { }
-                    if (!unlocked) {
-                        unlockButton.setEnabled(true);
-                        closeButton.setEnabled(true);
-                        passwordEditText.setEnabled(true);
-                        passwordEditText.requestFocus();
-                        String errorMessage = lockoutMessageFinal != null
-                                ? lockoutMessageFinal
-                                : jsonViewModel.getWalletPasswordMismatchByErrors();
-                        GlobalMethods.ShowErrorDialog(activity,
-                                jsonViewModel.getErrorTitleByLangValues(), errorMessage);
-                        return;
-                    }
-                    dialog.dismiss();
-                    onUnlocked.run(password.trim());
-                });
-            }).start();
+                        dialog.dismiss();
+                        onUnlocked.run(password.trim());
+                    });
         });
-    }
-
-    /**
-     * Load the signing keys for {@code walletAddress} from the (already
-     * unlocked) strongbox. Background-thread only, mirrors
-     * SendFragment.sendTransaction's key load.
-     *
-     * @return {privateKeyBase64, publicKeyBase64}
-     */
-    public static String[] loadWalletKeys(Context ctx, String walletAddress) throws Exception {
-        SecureStorage secureStorage = KeyViewModel.getSecureStorage();
-        String indexStr = PrefConnect.WALLET_ADDRESS_TO_INDEX_MAP.get(walletAddress);
-        if (indexStr == null) {
-            throw new Exception("Wallet not found for address");
-        }
-        String walletJsonStr = secureStorage.loadWallet(ctx, Integer.parseInt(indexStr));
-        JSONObject walletData = new JSONObject(walletJsonStr);
-        return new String[]{
-                walletData.getString("privateKey"),
-                walletData.getString("publicKey")
-        };
     }
 }
